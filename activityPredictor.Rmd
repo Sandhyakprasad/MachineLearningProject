@@ -1,0 +1,124 @@
+### Practical Machine Learning/ Predicting the Human Activity with the data from activity monitors. By Sandhya Krishna Prasad
+### Synopsis
+Human Activity Recognition - HAR - has emerged as a key research area in the last years and is gaining increasing attention by the pervasive computing research community, especially for the development of context-aware systems. There are many potential applications for HAR, like: elderly monitoring, life log systems for monitoring energy expenditure and for supporting weight-loss programs, and digital assistants for weight lifting exercises.[Read more](http://groupware.les.inf.puc-rio.br/har#ixzz3H6MzaTCW)
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participant. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+### The main objectives of this project are as follows:
+
+1. Predict the manner in which they did the exercise by using the **classe** variable.    
+2. Build a prediction model using different features and cross-validation technique.  
+3. Calculate the out of sample error.  
+4. Use the prediction model to predict **20** different test cases provided.  
+
+### Data Processing and transformation
+The following libraries need to be loaded:
+
+```{r loading required libraries ,echo=TRUE,cache=TRUE}
+library(lattice);library(ggplot2);library(knitr);library(caret)
+library(randomForest);library(rpart);library(rpart.plot);library(rattle)
+options(width=120)
+```
+### Loading and Reading the Training Data 
+
+Download the[Training Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) and the [Testing Data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).
+The data for this project comes from this [Source](http://groupware.les.inf.puc-rio.br/har).
+
+```{r loading training data ,echo=TRUE,cache=TRUE}
+fileUrl1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl1,destfile="trainingData.csv",method="curl")
+trainingData <- read.csv("trainingData.csv",header=TRUE,sep=",",na.strings=c("NA",""));dim(trainingData)
+```
+
+### Loading and Reading the Testing Data
+
+```{r loading testing data ,echo=TRUE,cache=TRUE}
+fileUrl2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl2,destfile="testingData.csv",method="curl")
+testingData <- read.csv("testingData.csv",header=TRUE,sep=",",na.strings=c("NA",""));dim(testingData)
+```
+
+### Processing the Data
+There are several approaches for cleaning up the data. This should help in reducing the number of predictors.
+Let us find the no **NA** values in the Training and Testing dataset.
+```{r cleaning data ,echo=TRUE,cache=TRUE}
+sum(is.na(trainingData));sum(is.na(testingData))
+train <- as.data.frame(table(colSums(is.na(trainingData))));colnames(train) <- c("NA's","Rows");train
+test<- as.data.frame(table(colSums(is.na(testingData))));colnames(test) <- c("NA's","Rows");test
+```
+
+Looking at the table of NA's we see that the Training set has 60 variables with 0 NA's ,whereas there are about 100 variables with 19216 NA's which is close to almost all the rows of dataset.
+
+Similarly the testing Data set has 60 variables with 0 NA's ,whereas there are about 100 variables with 20 NA's which is almost all the rows of dataset. So we can remove the variables with high no of NA's.
+
+### To reduce the no of predictors in both Training and Testing dataset :-
+
+- Remove the variables which has a high numbers of NA values.
+- Remove the irrelevant variables which are unlikely to be related to the outcome variable.
+
+```{r reducing the no of predictors ,echo=TRUE,cache=TRUE}
+trainingDf <- trainingData[ , colSums(is.na(trainingData)) == 0];dim(trainingDf)
+discard <- c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+trainingSet<- trainingDf[, -which(names(trainingDf) %in% discard)];dim(trainingSet)
+testingDf <- testingData[,colSums(is.na(testingData))==0];dim(testingDf)
+irrelevant <- c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+testingSet <- testingDf[,-which(names(testingDf) %in% irrelevant)];dim(testingSet)
+```
+We will keep this **testingSet** dataset aside to use for our final predictions after we train our training dataset.
+
+### Building the Model
+Here we build a machine learning model to predict the **classe** variable based on the other predictors from the training datatset.
+
+#### Data Partitioning: 
+Split the **trainingSet** data into training and testing data sets for building the prediction model. Here the split is 60(training) / 40(testing).
+
+```{r data partitioning ,echo=TRUE,cache=TRUE}
+splitData<- createDataPartition(y = trainingSet$classe, p = 0.6, list = FALSE)
+trainingGrp <- trainingSet[splitData, ];dim(trainingGrp)
+testingGrp <- trainingSet[-splitData, ];dim(testingGrp)
+```
+#### Using Rpart for analysis
+```{r rpart modelfit ,echo=TRUE,cache=TRUE}
+set.seed(43512)
+modelFit <- train(classe ~ .,method="rpart",data=trainingGrp)
+print(modelFit$finalModel)
+fancyRpartPlot(modelFit$finalModel)
+```
+
+Here we notice that the result from the 'rpart' package is close but not very accurate as we would want it to be. So let us try predicting using the random forests(rf).
+```{r random forests ,echo=TRUE,cache=TRUE}
+modelRf <- train(classe ~ ., data = trainingGrp, method = "rf", prox = TRUE, 
+               trControl = trainControl(method = "cv", number = 3, allowParallel = TRUE))
+modelRf
+```
+The model was built with a **3-fold** cross Validation.
+Now Let us calculate the **In Sample** and **Out of Sample** Accuracy. 
+In Sample Accuracy is calculated to check our prediction accuracy on the training data set.
+```{r in sample acuracy ,echo=TRUE,cache=TRUE}
+predictionTrain <- predict(modelRf, trainingGrp)
+confusionMatrix(predictionTrain, trainingGrp$classe)
+```
+We from the Confusion Matrix that the in sample accuracy value is 1 which is 100% . 
+
+### Out of Sample Accuracy
+```{r out of sample accuracy,echo=TRUE,cache=TRUE}
+predictionTest <- predict(modelRf, testingGrp)
+confusionMatrix(predictionTest, testingGrp$classe)
+```
+We see from the Matrix above that the prediction model has an Out of sample accuracy value of about 0.9925 which is 99.25%.
+
+### Final Prediction using the test data given on the Assignment with 20 observations
+```{r final predicitions ,echo=TRUE,cache=TRUE}
+finalPredictions  <- predict(modelRf,testingSet)
+finalPredictions <- as.character(finalPredictions)
+finalPredictions
+```
+### Conclusion 
+The prediction model built was able to predict the test cases with utmost accuracy . 
+
+
+
+
+
+
+
